@@ -242,7 +242,7 @@ async function updateRail(cfg){
 
     const rowHTML = a =>
       `<div class="row${a.timeToStation<60?" due":""}">
-         <span class="dest">${a.destinationName||"?"}${a.platformName? " · plat "+a.platformName:""}</span>
+         <span class="dest">${a.destinationName||"?"}${a.platformName? " · "+a.platformName:""}</span>
          <span class="eta">${mins(a.timeToStation)}</span>
        </div>`;
 
