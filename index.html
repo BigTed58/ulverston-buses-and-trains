@@ -53,6 +53,7 @@
   .badge.bus{background:var(--bus-red)}
   .badge.rail{background:var(--lo-orange);color:#111}
   .badge.suff{background:#5bbd72;color:#111}
+  .badge.weaver{background:#9b0058;color:#fff}
   .panel-head .stopname{
     font-size:clamp(16px,2.4vw,24px);font-weight:500;letter-spacing:.04em;
     text-transform:uppercase;color:var(--text);
@@ -89,6 +90,21 @@
     .panel.bus-panel{flex:1 1 45%}
     .panel.rail-panel{flex:1 1 100%}
   }
+  /* Phone: let the page scroll, size panels to content, stack direction
+     columns vertically so each gets the full width */
+  @media (max-width:640px){
+    html,body{height:auto}
+    body{padding:8px}
+    main{display:flex;flex-direction:column}
+    .panel{flex:none}
+    .cols{flex-direction:column;gap:4px}
+    .col + .col{border-left:none;padding-left:0;
+                border-top:1px solid var(--rule);padding-top:6px;margin-top:2px}
+    .row{font-size:24px}
+    .panel-head .stopname{font-size:17px}
+    .badge{font-size:19px;padding:3px 10px}
+    footer{flex-direction:column;gap:2px}
+  }
 </style>
 </head>
 <body>
@@ -99,6 +115,7 @@
 <main>
   <section class="panel bus-panel" id="panel-123"></section>
   <section class="panel bus-panel" id="panel-275"></section>
+  <section class="panel bus-panel" id="panel-230"></section>
   <section class="panel rail-panel" id="panel-rail"></section>
   <section class="panel rail-panel" id="panel-suffragette"></section>
 </main>
@@ -119,12 +136,13 @@ const CONFIG = {
     { line: "123", match: "hale end road", title: "Hale End Road", panel: "panel-123", stopIds: [] },
     { line: "275", match: "forest road",   title: "Forest Road",   panel: "panel-275", stopIds: [],
       dirFilter: ["walthamstow","barkingside"] },
+    { line: "230", match: "fyfield road", title: "Fyfield Road", panel: "panel-230", stopIds: [] },
   ],
   rails: [
     { searchTerm: "Wood Street", mode: "overground",
       destFilter: "liverpool street", lineFilter: "",
       title: "Wood Street → Liverpool Street",
-      badge: "Overground", badgeClass: "rail",
+      badge: "Weaver", badgeClass: "weaver",
       panel: "panel-rail", stopId: "" },
     { searchTerm: "Blackhorse Road", mode: "overground",
       destFilter: "", lineFilter: "suffragette",
