@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Walthamstow Departures</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=VT323&family=Barlow+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  /* ---- Countdown-sign aesthetic: amber dot-matrix on black, like a TfL bus stop sign ---- */
+  :root{
+    --bg:#0a0b0d;
+    --panel:#101216;
+    --amber:#ffb400;
+    --amber-dim:#8a6200;
+    --text:#e8e4d8;
+    --muted:#7d7a70;
+    --bus-red:#dc241f;
+    --lo-orange:#fa7b05;
+    --rule:#22252b;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:"Barlow Condensed",system-ui,sans-serif;
+    padding:10px;
+    display:flex;flex-direction:column;gap:10px;
+  }
+  header{
+    display:flex;align-items:baseline;justify-content:space-between;
+    padding:2px 6px;
+  }
+  header h1{
+    font-size:clamp(18px,2.5vw,26px);font-weight:600;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--muted);
+  }
+  #clock{
+    font-family:"VT323",monospace;font-size:clamp(24px,3.5vw,36px);
+    color:var(--amber);line-height:1;
+  }
+  main{flex:1;display:flex;flex-direction:column;gap:10px;min-height:0}
+  .panel{
+    flex:1;background:var(--panel);border:1px solid var(--rule);border-radius:8px;
+    padding:10px 14px;display:flex;flex-direction:column;min-height:0;
+  }
+  .panel-head{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+  .badge{
+    font-weight:600;font-size:clamp(18px,2.8vw,28px);line-height:1;
+    padding:4px 12px;border-radius:4px;color:#fff;letter-spacing:.03em;
+  }
+  .badge.bus{background:var(--bus-red)}
+  .badge.rail{background:var(--lo-orange);color:#111}
+  .badge.suff{background:#5bbd72;color:#111}
+  .panel-head .stopname{
+    font-size:clamp(16px,2.4vw,24px);font-weight:500;letter-spacing:.04em;
+    text-transform:uppercase;color:var(--text);
+  }
+  .cols{flex:1;display:flex;gap:14px;min-height:0}
+  .col{flex:1;display:flex;flex-direction:column;min-width:0}
+  .col + .col{border-left:1px solid var(--rule);padding-left:14px}
+  .dir{
+    font-size:clamp(13px,1.8vw,17px);text-transform:uppercase;letter-spacing:.08em;
+    color:var(--muted);margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .row{
+    display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+    font-family:"VT323",monospace;color:var(--amber);
+    font-size:clamp(22px,3.4vw,38px);line-height:1.25;
+  }
+  .row .dest{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .eta{flex-shrink:0}
+  .row.due .eta{animation:blink 1.2s step-end infinite}
+  @media (prefers-reduced-motion:reduce){.row.due .eta{animation:none}}
+  @keyframes blink{50%{opacity:.25}}
+  .empty,.err{
+    font-family:"VT323",monospace;font-size:clamp(20px,3vw,30px);
+    color:var(--amber-dim);
+  }
+  .err{color:#c05a3c}
+  footer{
+    display:flex;justify-content:space-between;font-size:14px;color:var(--muted);
+    padding:0 6px;letter-spacing:.05em;
+  }
+  /* Landscape: put the two bus panels side by side, train full width below */
+  @media (orientation:landscape) and (min-width:800px){
+    main{flex-direction:row;flex-wrap:wrap}
+    .panel.bus-panel{flex:1 1 45%}
+    .panel.rail-panel{flex:1 1 100%}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Live departures</h1>
+  <div id="clock">--:--:--</div>
+</header>
+<main>
+  <section class="panel bus-panel" id="panel-123"></section>
+  <section class="panel bus-panel" id="panel-275"></section>
+  <section class="panel rail-panel" id="panel-rail"></section>
+  <section class="panel rail-panel" id="panel-suffragette"></section>
+</main>
+<footer>
+  <span id="status">Starting…</span>
+  <span>Data: TfL Unified API · refreshes every 30 s · tap screen to keep display awake</span>
+</footer>
+
+<script>
+"use strict";
+/* ================= CONFIG =================
+   Stops are found automatically at start-up by matching the road name
+   against each route's stop list, then the resolved NaPTAN IDs are
+   printed to the console. If auto-detection picks the wrong stop pair,
+   paste the correct IDs into stopIds below to override.               */
+const CONFIG = {
+  buses: [
+    { line: "123", match: "hale end road", title: "Hale End Road", panel: "panel-123", stopIds: [] },
+    { line: "275", match: "forest road",   title: "Forest Road",   panel: "panel-275", stopIds: [],
+      dirFilter: ["walthamstow","barkingside"] },
+  ],
+  rails: [
+    { searchTerm: "Wood Street", mode: "overground",
+      destFilter: "liverpool street", lineFilter: "",
+      title: "Wood Street → Liverpool Street",
+      badge: "Overground", badgeClass: "rail",
+      panel: "panel-rail", stopId: "" },
+    { searchTerm: "Blackhorse Road", mode: "overground",
+      destFilter: "", lineFilter: "suffragette",
+      title: "Blackhorse Road",
+      badge: "Suffragette", badgeClass: "suff",
+      panel: "panel-suffragette", stopId: "" }
+  ],
+  refreshMs: 30000,
+  api: "https://api.tfl.gov.uk"
+};
+/* ========================================== */
+
+const $ = id => document.getElementById(id);
+
+async function getJSON(url){
+  const r = await fetch(url);
+  if(!r.ok) throw new Error(`TfL API ${r.status} on ${url}`);
+  return r.json();
+}
+
+/* ---- one-off stop resolution ---- */
+async function resolveBusStops(cfg){
+  if(cfg.stopIds.length) return;
+  const stops = await getJSON(`${CONFIG.api}/Line/${cfg.line}/StopPoints`);
+  const hits = stops.filter(s => (s.commonName||"").toLowerCase().includes(cfg.match));
+  cfg.stopIds = hits.map(s => s.naptanId || s.id);
+  console.log(`Route ${cfg.line} @ "${cfg.match}" →`, hits.map(s => `${s.naptanId} (${s.commonName}${s.stopLetter? " stop "+s.stopLetter:""})`));
+  if(!cfg.stopIds.length) throw new Error(`No stops matching "${cfg.match}" on route ${cfg.line}`);
+}
+
+async function resolveRailStop(cfg){
+  if(cfg.stopId) return;
+  const res = await getJSON(`${CONFIG.api}/StopPoint/Search/${encodeURIComponent(cfg.searchTerm)}?modes=${cfg.mode}`);
+  if(!res.matches || !res.matches.length) throw new Error(`No ${cfg.mode} station found for "${cfg.searchTerm}"`);
+  let id = res.matches[0].id;
+  // Interchanges resolve to a HUB id, which returns no arrivals.
+  // Drill into the hub's children to find the actual rail station (910G…).
+  if(id.startsWith("HUB")){
+    const hub = await getJSON(`${CONFIG.api}/StopPoint/${id}`);
+    const findRail = sp => {
+      if(sp.id && sp.id.startsWith("910G") && (sp.modes||[]).includes(cfg.mode)) return sp.id;
+      for(const c of (sp.children||[])){ const r = findRail(c); if(r) return r; }
+      return null;
+    };
+    id = findRail(hub) || id;
+  }
+  cfg.stopId = id;
+  console.log(`Rail station "${cfg.searchTerm}" →`, cfg.stopId);
+}
+
+/* ---- rendering ---- */
+const mins = s => s < 60 ? "due" : Math.floor(s/60) + " min";
+
+function busPanelHTML(cfg, groups){
+  let cols = "";
+  for(const g of groups){
+    const rows = g.arrivals.slice(0,3).map(a =>
+      `<div class="row${a.timeToStation<60?" due":""}">
+         <span class="dest">${a.destinationName||a.towards||""}</span>
+         <span class="eta">${mins(a.timeToStation)}</span>
+       </div>`).join("") || `<div class="empty">No arrivals</div>`;
+    cols += `<div class="col"><div class="dir">${g.label}</div>${rows}</div>`;
+  }
+  if(!groups.length) cols = `<div class="empty">No arrivals reported</div>`;
+  return `<div class="panel-head"><span class="badge bus">${cfg.line}</span>
+          <span class="stopname">${cfg.title}</span></div>
+          <div class="cols">${cols}</div>`;
+}
+
+async function updateBus(cfg){
+  const el = $(cfg.panel);
+  try{
+    const all = (await Promise.all(cfg.stopIds.map(id =>
+      getJSON(`${CONFIG.api}/StopPoint/${id}/Arrivals`)))).flat();
+    const arr = all.filter(a => a.lineId === cfg.line.toLowerCase() || a.lineName === cfg.line);
+    // one column per physical stop = one per direction
+    const byStop = new Map();
+    for(const a of arr){
+      if(!byStop.has(a.naptanId)) byStop.set(a.naptanId, []);
+      byStop.get(a.naptanId).push(a);
+    }
+    let groups = [...byStop.values()].map(list => {
+      list.sort((x,y) => x.timeToStation - y.timeToStation);
+      const first = list[0];
+      const label = "towards " + (first.towards || first.destinationName || "?") +
+                    (first.platformName ? ` · stop ${first.platformName}` : "");
+      return { label, arrivals: list };
+    }).sort((a,b) => a.label.localeCompare(b.label));
+    if(cfg.dirFilter){
+      groups = groups.filter(g =>
+        cfg.dirFilter.some(d => g.label.toLowerCase().includes(d)));
+    }
+    el.innerHTML = busPanelHTML(cfg, groups);
+  }catch(e){
+    el.innerHTML = `<div class="panel-head"><span class="badge bus">${cfg.line}</span>
+      <span class="stopname">${cfg.title}</span></div><div class="err">${e.message}</div>`;
+  }
+}
+
+async function updateRail(cfg){
+  const el = $(cfg.panel);
+  const head = `<div class="panel-head"><span class="badge ${cfg.badgeClass}">${cfg.badge}</span>
+      <span class="stopname">${cfg.title}</span></div>`;
+  try{
+    let all = await getJSON(`${CONFIG.api}/StopPoint/${cfg.stopId}/Arrivals`);
+    if(cfg.lineFilter){
+      // TfL sometimes still tags Overground arrivals "london-overground"
+      // instead of the named line, so filter softly.
+      const filtered = all.filter(a =>
+        a.lineId === cfg.lineFilter || a.lineId === "london-overground");
+      if(filtered.length) all = filtered;
+    }
+    if(cfg.destFilter) all = all.filter(a => (a.destinationName||"").toLowerCase().includes(cfg.destFilter));
+    all.sort((x,y) => x.timeToStation - y.timeToStation);
+
+    const rowHTML = a =>
+      `<div class="row${a.timeToStation<60?" due":""}">
+         <span class="dest">${a.destinationName||"?"}${a.platformName? " · plat "+a.platformName:""}</span>
+         <span class="eta">${mins(a.timeToStation)}</span>
+       </div>`;
+
+    let cols;
+    if(cfg.destFilter){
+      // single-destination board
+      const rows = all.slice(0,4).map(rowHTML).join("") || `<div class="empty">No trains reported</div>`;
+      cols = `<div class="col">${rows}</div>`;
+    }else{
+      // both directions: one column per destination
+      const byDest = new Map();
+      for(const a of all){
+        const k = a.destinationName || a.towards || "?";
+        if(!byDest.has(k)) byDest.set(k, []);
+        byDest.get(k).push(a);
+      }
+      cols = [...byDest.entries()].map(([dest,list]) => {
+        const rows = list.slice(0,3).map(a =>
+          `<div class="row${a.timeToStation<60?" due":""}">
+             <span class="dest">${a.platformName || ""}</span>
+             <span class="eta">${mins(a.timeToStation)}</span>
+           </div>`).join("");
+        return `<div class="col"><div class="dir">to ${dest}</div>${rows}</div>`;
+      }).join("") || `<div class="empty">No trains reported</div>`;
+    }
+    el.innerHTML = head + `<div class="cols">${cols}</div>`;
+  }catch(e){
+    el.innerHTML = head + `<div class="err">${e.message}</div>`;
+  }
+}
+
+/* ---- main loop ---- */
+async function refresh(){
+  await Promise.all([
+    ...CONFIG.buses.map(updateBus),
+    ...CONFIG.rails.map(updateRail)
+  ]);
+  $("status").textContent = "Updated " + new Date().toLocaleTimeString("en-GB");
+}
+
+async function start(){
+  try{
+    $("status").textContent = "Finding stops…";
+    await Promise.all([
+      ...CONFIG.buses.map(resolveBusStops),
+      ...CONFIG.rails.map(resolveRailStop)
+    ]);
+    await refresh();
+    setInterval(refresh, CONFIG.refreshMs);
+  }catch(e){
+    $("status").textContent = e.message;
+  }
+}
+
+/* clock */
+setInterval(() => {
+  $("clock").textContent = new Date().toLocaleTimeString("en-GB");
+}, 1000);
+
+/* keep the Fire's screen awake (needs one user tap to grant) */
+let wakeLock = null;
+async function requestWake(){
+  try{ wakeLock = await navigator.wakeLock.request("screen"); }catch(_){}
+}
+document.addEventListener("click", requestWake, { once:false });
+document.addEventListener("visibilitychange", () => {
+  if(document.visibilityState === "visible") requestWake();
+});
+
+start();
+</script>
+</body>
+</html>
