@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Walthamstow Departures</title>
+<title>Ulverston Road Departures</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=VT323&family=Barlow+Condensed:wght@500;600&display=swap" rel="stylesheet">
 <style>
@@ -80,6 +80,11 @@
     color:var(--amber-dim);
   }
   .err{color:#c05a3c}
+  .banner{
+    font-size:clamp(14px,2vw,18px);letter-spacing:.03em;
+    color:#ffd166;background:#2a1f08;border:1px solid #5a4410;
+    border-radius:4px;padding:4px 10px;margin-bottom:6px;
+  }
   footer{
     display:flex;justify-content:space-between;font-size:14px;color:var(--muted);
     padding:0 6px;letter-spacing:.05em;
@@ -109,7 +114,7 @@
 </head>
 <body>
 <header>
-  <h1>Live departures</h1>
+  <h1>Ulverston Road Departures</h1>
   <div id="clock">--:--:--</div>
 </header>
 <main>
@@ -143,11 +148,13 @@ const CONFIG = {
       destFilter: "liverpool street", lineFilter: "",
       title: "Wood Street → Liverpool Street",
       badge: "Weaver", badgeClass: "weaver",
+      statusLine: "weaver", suppressKeywords: ["chingford","wood street","walthamstow"],
       panel: "panel-rail", stopId: "" },
     { searchTerm: "Blackhorse Road", mode: "overground",
       destFilter: "", lineFilter: "suffragette",
       title: "Blackhorse Road",
       badge: "Suffragette", badgeClass: "suff",
+      statusLine: "suffragette", suppressKeywords: ["blackhorse"],
       panel: "panel-suffragette", stopId: "" }
   ],
   refreshMs: 30000,
@@ -247,7 +254,31 @@ async function updateRail(cfg){
   const head = `<div class="panel-head"><span class="badge ${cfg.badgeClass}">${cfg.badge}</span>
       <span class="stopname">${cfg.title}</span></div>`;
   try{
-    let all = await getJSON(`${CONFIG.api}/StopPoint/${cfg.stopId}/Arrivals`);
+    const [allRaw, statusRes] = await Promise.all([
+      getJSON(`${CONFIG.api}/StopPoint/${cfg.stopId}/Arrivals`),
+      cfg.statusLine
+        ? getJSON(`${CONFIG.api}/Line/${cfg.statusLine}/Status?detail=true`).catch(() => null)
+        : Promise.resolve(null)
+    ]);
+
+    // Disruption banner: anything other than Good Service (severity 10)
+    let banner = "", suppress = false;
+    const statuses = statusRes && statusRes[0] && statusRes[0].lineStatuses || [];
+    const bad = statuses.filter(s => s.statusSeverity !== 10);
+    if(bad.length){
+      const desc = bad.map(s => s.statusSeverityDescription).join(", ");
+      const reason = bad.find(s => s.reason)?.reason || "";
+      banner = `<div class="banner">⚠ ${desc}${reason ? " — " + reason : ""}</div>`;
+      // Does the disruption hit this station? Check TfL's affected-stop list,
+      // falling back to keyword match on the reason text.
+      const text = (desc + " " + reason).toLowerCase();
+      suppress = bad.some(s =>
+        (s.disruption?.affectedStops || []).some(st =>
+          st.id === cfg.stopId || st.stationAtcoCode === cfg.stopId))
+        || (cfg.suppressKeywords || []).some(k => text.includes(k));
+    }
+
+    let all = suppress ? [] : allRaw;
     if(cfg.lineFilter){
       // TfL sometimes still tags Overground arrivals "london-overground"
       // instead of the named line, so filter softly.
@@ -264,10 +295,11 @@ async function updateRail(cfg){
          <span class="eta">${mins(a.timeToStation)}</span>
        </div>`;
 
+    const emptyMsg = suppress ? "No service" : "No trains reported";
     let cols;
     if(cfg.destFilter){
       // single-destination board
-      const rows = all.slice(0,4).map(rowHTML).join("") || `<div class="empty">No trains reported</div>`;
+      const rows = all.slice(0,4).map(rowHTML).join("") || `<div class="empty">${emptyMsg}</div>`;
       cols = `<div class="col">${rows}</div>`;
     }else{
       // both directions: one column per destination
@@ -284,9 +316,9 @@ async function updateRail(cfg){
              <span class="eta">${mins(a.timeToStation)}</span>
            </div>`).join("");
         return `<div class="col"><div class="dir">to ${dest}</div>${rows}</div>`;
-      }).join("") || `<div class="empty">No trains reported</div>`;
+      }).join("") || `<div class="empty">${emptyMsg}</div>`;
     }
-    el.innerHTML = head + `<div class="cols">${cols}</div>`;
+    el.innerHTML = head + banner + `<div class="cols">${cols}</div>`;
   }catch(e){
     el.innerHTML = head + `<div class="err">${e.message}</div>`;
   }
